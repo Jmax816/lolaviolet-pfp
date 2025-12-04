@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lola Violet PFP Maker</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #121b3a, #020619 65%);
+      color: #f5f5ff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 12px;
+    }
+
+    .wrapper {
+      width: 100%;
+      max-width: 1100px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    @media (max-width: 900px) {
+      .wrapper {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: rgba(2, 6, 25, 0.9);
+      border-radius: 18px;
+      padding: 18px 20px 16px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+      border: 1px solid rgba(123, 190, 255, 0.4);
+    }
+
+    @media (max-width: 600px) {
+      .panel {
+        padding: 14px 14px 12px;
+      }
+    }
+
+    h1 {
+      font-size: clamp(1.9rem, 4vw, 2.4rem);
+      margin: 0 0 8px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    h1 span {
+      color: #69a9ff;
+    }
+
+    p {
+      margin: 0 0 10px;
+      line-height: 1.4;
+      font-size: 0.95rem;
+    }
+
+    label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      margin-bottom: 14px;
+      font-size: 0.9rem;
+    }
+
+    .controls {
+      margin-top: 6px;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .slider-row span {
+      font-size: 0.8rem;
+      opacity: 0.85;
+      min-width: 40px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+    }
+
+    button {
+      cursor: pointer;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, #4f8bff, #7bd3ff);
+      color: #020617;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+      font-size: 0.9rem;
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      opacity: 0.8;
+      margin-top: 8px;
+    }
+
+    .canvas-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      max-width: min(512px, 90vw);
+      display: block;
+      margin: 0 auto;
+      border-radius: 24px;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.8);
+      background: #000814;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="panel">
+      <h1><span>Lola Violet</span> PFP Maker</h1>
+      <p>Upload a photo, drag to position it inside the glowing frame, and use the zoom slider to fit it. Then download your new profile picture.</p>
+
+      <label for="fileInput">1. Upload your photo</label>
+      <input id="fileInput" type="file" accept="image/*" />
+
+      <div class="controls">
+        <label for="zoomRange">2. Adjust zoom</label>
+        <div class="slider-row">
+          <span>Zoom</span>
+          <input id="zoomRange" type="range" min="0" max="100" value="50" />
+        </div>
+
+        <button id="downloadBtn" disabled>3. Download PFP</button>
+        <p class="hint">Tip: Tap or click inside the image and drag to move your photo. Anything you drag outside the circular center of the frame will not be visible in the final picture.</p>
+      </div>
+    </div>
+
+    <div class="panel canvas-wrapper">
+      <canvas id="pfpCanvas" width="1024" height="1024"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("pfpCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const fileInput = document.getElementById("fileInput");
+    const zoomRange = document.getElementById("zoomRange");
+    const downloadBtn = document.getElementById("downloadBtn");
+
+    const frameImg = new Image();
+    frameImg.src = "pfpframelola.png";
+
+    let photoImg = null;
+
+    let offsetX = canvas.width / 2;
+    let offsetY = canvas.height / 2;
+    let scale = 1;
+    let minScale = 0.3;
+    let maxScale = 3;
+
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let dragStartOffsetX = 0;
+    let dragStartOffsetY = 0;
+
+    // Circle mask parameters relative to the original 1024x1024 frame
+    const circleCenterRel = { x: 508 / 1024, y: 496 / 1024 };
+    const circleRadiusRel = 455 / 1024;
+
+    function mapSliderToScale(value) {
+      const t = value / 100;
+      return minScale + t * (maxScale - minScale);
+    }
+
+    function mapScaleToSlider(s) {
+      const t = (s - minScale) / (maxScale - minScale);
+      return Math.round(t * 100);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#010f40";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (photoImg) {
+        const cx = canvas.width * circleCenterRel.x;
+        const cy = canvas.height * circleCenterRel.y;
+        const r = canvas.width * circleRadiusRel;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+
+        const dw = photoImg.width * scale;
+        const dh = photoImg.height * scale;
+        const dx = offsetX - dw / 2;
+        const dy = offsetY - dh / 2;
+
+        ctx.drawImage(photoImg, dx, dy, dw, dh);
+        ctx.restore();
+      }
+
+      if (frameImg.complete && frameImg.naturalWidth > 0) {
+        ctx.drawImage(frameImg, 0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    frameImg.onload = draw;
+
+    fileInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          photoImg = img;
+
+          const scaleX = canvas.width / img.width;
+          const scaleY = canvas.height / img.height;
+          const fitScale = Math.min(scaleX, scaleY);
+          const coverScale = Math.max(scaleX, scaleY);
+
+          minScale = fitScale * 0.5;
+          maxScale = coverScale * 3;
+          scale = coverScale;
+
+          offsetX = canvas.width / 2;
+          offsetY = canvas.height / 2;
+
+          zoomRange.value = mapScaleToSlider(scale);
+          downloadBtn.disabled = false;
+
+          draw();
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    zoomRange.addEventListener("input", () => {
+      if (!photoImg) return;
+      const newScale = mapSliderToScale(parseInt(zoomRange.value, 10));
+
+      const canvasCenterX = canvas.width / 2;
+      const canvasCenterY = canvas.height / 2;
+      const preX = (canvasCenterX - offsetX) / scale;
+      const preY = (canvasCenterY - offsetY) / scale;
+
+      scale = newScale;
+
+      offsetX = canvasCenterX - preX * scale;
+      offsetY = canvasCenterY - preY * scale;
+
+      draw();
+    });
+
+    function getPointerPosition(evt) {
+      const rect = canvas.getBoundingClientRect();
+      if (evt.touches && evt.touches.length > 0) {
+        return {
+          x: evt.touches[0].clientX - rect.left,
+          y: evt.touches[0].clientY - rect.top
+        };
+      } else {
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+      }
+    }
+
+    function startDrag(evt) {
+      if (!photoImg) return;
+      evt.preventDefault();
+      isDragging = true;
+      const pos = getPointerPosition(evt);
+      dragStartX = pos.x;
+      dragStartY = pos.y;
+      dragStartOffsetX = offsetX;
+      dragStartOffsetY = offsetY;
+    }
+
+    function moveDrag(evt) {
+      if (!isDragging) return;
+      evt.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const pos = getPointerPosition(evt);
+      const dx = (pos.x - dragStartX) * (canvas.width / rect.width);
+      const dy = (pos.y - dragStartY) * (canvas.height / rect.height);
+      offsetX = dragStartOffsetX + dx;
+      offsetY = dragStartOffsetY + dy;
+      draw();
+    }
+
+    function endDrag(evt) {
+      if (!isDragging) return;
+      evt.preventDefault();
+      isDragging = false;
+    }
+
+    canvas.addEventListener("mousedown", startDrag);
+    canvas.addEventListener("mousemove", moveDrag);
+    canvas.addEventListener("mouseup", endDrag);
+    canvas.addEventListener("mouseleave", endDrag);
+
+    canvas.addEventListener("touchstart", startDrag, { passive: false });
+    canvas.addEventListener("touchmove", moveDrag, { passive: false });
+    canvas.addEventListener("touchend", endDrag, { passive: false });
+    canvas.addEventListener("touchcancel", endDrag, { passive: false });
+
+    downloadBtn.addEventListener("click", () => {
+      if (!photoImg) return;
+      draw();
+
+      // Prefer toBlob when available
+      if (canvas.toBlob) {
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "lola-violet-pfp.png";
+
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }, "image/png");
+      } else {
+        // Fallback for older browsers
+        try {
+          const dataUrl = canvas.toDataURL("image/png");
+          const link = document.createElement("a");
+          link.href = dataUrl;
+          link.download = "lola-violet-pfp.png";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (err) {
+          // Last resort: open in a new tab and let the user save manually
+          const dataUrl = canvas.toDataURL("image/png");
+          window.open(dataUrl, "_blank");
+        }
+      }
+    });
+
+    draw();
+  </script>
+</body>
+</html>
